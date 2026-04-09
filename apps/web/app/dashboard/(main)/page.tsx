@@ -182,19 +182,6 @@ export default async function DashboardHomePage() {
         </CardContent>
       </AppCard>
 
-      {role === "client" && tenant?.slug ? (
-        <AppCard>
-          <CardHeader>
-            <CardTitle>Client view</CardTitle>
-            <CardDescription>Use the public booking page for new appointments.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href={`/book/${tenant.slug}`} className={cn(buttonVariants(), "rounded-xl")}>
-              Open booking page
-            </Link>
-          </CardContent>
-        </AppCard>
-      ) : null}
       {tenant?.slug ? (
         <div className="pt-2">
           <Link

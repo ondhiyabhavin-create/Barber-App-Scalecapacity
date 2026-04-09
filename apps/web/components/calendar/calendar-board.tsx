@@ -132,6 +132,25 @@ export function CalendarBoard({
     setLoading(false);
   }, [supabase, tenantId, weekStart, weekEnd]);
 
+  const loadPickers = useCallback(async () => {
+    setPickersReady(false);
+    const [{ data: b }, { data: s }, { data: c }] = await Promise.all([
+      supabase.from("barbers").select("id, display_name").eq("tenant_id", tenantId),
+      supabase.from("services").select("id, name, duration_min, price_cents").eq("tenant_id", tenantId),
+      supabase.from("clients").select("id, name").eq("tenant_id", tenantId).limit(200),
+    ]);
+    const bl = b ?? [];
+    const sl = s ?? [];
+    const cl = c ?? [];
+    setBarbers(bl);
+    setServices(sl);
+    setClients(cl);
+    setBarberId((prev) => (prev && bl.some((x) => x.id === prev) ? prev : bl[0]?.id));
+    setServiceId((prev) => (prev && sl.some((x) => x.id === prev) ? prev : sl[0]?.id));
+    setClientId((prev) => (prev && cl.some((x) => x.id === prev) ? prev : cl[0]?.id));
+    setPickersReady(true);
+  }, [supabase, tenantId]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -160,29 +179,54 @@ export function CalendarBoard({
 
   useEffect(() => {
     let cancelled = false;
-    setPickersReady(false);
     void (async () => {
-      const [{ data: b }, { data: s }, { data: c }] = await Promise.all([
-        supabase.from("barbers").select("id, display_name").eq("tenant_id", tenantId),
-        supabase.from("services").select("id, name, duration_min, price_cents").eq("tenant_id", tenantId),
-        supabase.from("clients").select("id, name").eq("tenant_id", tenantId).limit(200),
-      ]);
+      await loadPickers();
       if (cancelled) return;
-      const bl = b ?? [];
-      const sl = s ?? [];
-      const cl = c ?? [];
-      setBarbers(bl);
-      setServices(sl);
-      setClients(cl);
-      setBarberId(bl[0]?.id);
-      setServiceId(sl[0]?.id);
-      setClientId(cl[0]?.id);
-      setPickersReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [supabase, tenantId]);
+  }, [loadPickers]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`calendar-pickers-${tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "barbers",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => void loadPickers()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "services",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => void loadPickers()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "clients",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => void loadPickers()
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, tenantId, loadPickers]);
 
   async function createAppointment() {
     if (!barberId || !serviceId || !clientId || !startLocal) {

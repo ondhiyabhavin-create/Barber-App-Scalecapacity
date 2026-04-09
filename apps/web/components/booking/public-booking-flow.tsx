@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addDays,
   endOfDay,
@@ -78,7 +78,7 @@ const STEP_LABELS = ["Service", "Barber", "Time", "Details", "Payment", "Confirm
 export function PublicBookingFlow({ slug, initialShop }: Props) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
-  const [shop] = useState<ShopPayload | null>(initialShop);
+  const [shop, setShop] = useState<ShopPayload | null>(initialShop);
   const [step, setStep] = useState(0);
   const [serviceId, setServiceId] = useState<string>("");
   const [barberId, setBarberId] = useState<string>("");
@@ -148,47 +148,106 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
   const selectedService = shop?.services.find((s) => s.id === serviceId);
   const selectedBarber = shop?.barbers.find((b) => b.barber.id === barberId);
 
-  useEffect(() => {
-    void (async () => {
-      if (!selectedService || !selectedBarber) return;
-      const dayDate = new Date(day + "T12:00:00");
-      setLoadingSlots(true);
-      setSlot(null);
-      const rangeStart = startOfDay(dayDate);
-      const rangeEnd = endOfDay(dayDate);
+  const loadSlots = useCallback(async () => {
+    if (!selectedService || !selectedBarber) return;
+    const dayDate = new Date(day + "T12:00:00");
+    setLoadingSlots(true);
+    setSlot(null);
+    const rangeStart = startOfDay(dayDate);
+    const rangeEnd = endOfDay(dayDate);
 
-      const { data: busyJson, error: busyErr } = await supabase.rpc(
-        "get_public_busy_ranges",
-        {
-          p_barber_id: selectedBarber.barber.id,
-          p_range_start: rangeStart.toISOString(),
-          p_range_end: rangeEnd.toISOString(),
-        }
-      );
-
-      if (busyErr) {
-        toast.error(busyErr.message);
-        setLoadingSlots(false);
-        return;
+    const { data: busyJson, error: busyErr } = await supabase.rpc(
+      "get_public_busy_ranges",
+      {
+        p_barber_id: selectedBarber.barber.id,
+        p_range_start: rangeStart.toISOString(),
+        p_range_end: rangeEnd.toISOString(),
       }
+    );
 
-      const busyArr = normalizeBusyJson(busyJson);
-      const busy: BusyRange[] = busyArr.map((b) => ({
-        start: new Date(b.start),
-        end: new Date(b.end),
-      }));
-
-      const generated = generateSlotStatesForDay(
-        dayDate,
-        selectedBarber.working_hours,
-        selectedService.duration_min,
-        busy,
-        15
-      );
-      setSlotStates(generated);
+    if (busyErr) {
+      toast.error(busyErr.message);
       setLoadingSlots(false);
-    })();
+      return;
+    }
+
+    const busyArr = normalizeBusyJson(busyJson);
+    const busy: BusyRange[] = busyArr.map((b) => ({
+      start: new Date(b.start),
+      end: new Date(b.end),
+    }));
+
+    const generated = generateSlotStatesForDay(
+      dayDate,
+      selectedBarber.working_hours,
+      selectedService.duration_min,
+      busy,
+      15
+    );
+    setSlotStates(generated);
+    setLoadingSlots(false);
   }, [supabase, selectedService, selectedBarber, day]);
+
+  useEffect(() => {
+    void loadSlots();
+  }, [loadSlots]);
+
+  const loadPublicShop = useCallback(async () => {
+    const { data, error } = await supabase.rpc("get_public_shop", { p_slug: slug });
+    if (error || !data) return;
+    setShop(data as ShopPayload);
+  }, [supabase, slug]);
+
+  useEffect(() => {
+    if (!shop?.tenant?.id) return;
+    const tenantId = shop.tenant.id;
+    const channel = supabase
+      .channel(`public-booking-${tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "appointments",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => void loadSlots()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "services",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => void loadPublicShop()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "barbers",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => void loadPublicShop()
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "working_hours",
+        },
+        () => void loadPublicShop()
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, shop?.tenant?.id, loadSlots, loadPublicShop]);
 
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => addDays(weekAnchor, i));
