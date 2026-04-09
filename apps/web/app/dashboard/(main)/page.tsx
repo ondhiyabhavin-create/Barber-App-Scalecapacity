@@ -18,13 +18,9 @@ export default async function DashboardHomePage() {
   const role = effectiveRole ?? profile?.role;
 
   if (role === "client") {
-    const { data: tenantRows } = await supabase
-      .from("tenants")
-      .select("id, name, slug, city, region, country, logo_url, icon_emoji, latitude, longitude")
-      .order("created_at", { ascending: false })
-      .eq("is_active", true)
-      .limit(100);
-    const tenants = (tenantRows?.length ? tenantRows : tenant ? [tenant] : []) as Array<{
+    const { data: marketplaceRows } = await supabase.rpc("get_marketplace_shops");
+    const rows = Array.isArray(marketplaceRows) ? marketplaceRows : [];
+    const tenants = (rows.length ? rows : tenant ? [tenant] : []) as Array<{
       id: string;
       name: string;
       slug: string;

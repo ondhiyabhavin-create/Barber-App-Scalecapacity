@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { Mask, Users } from "lucide-react";
+import { Shield, Users } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type UserOption = { id: string; role: "owner" | "staff" | "client"; label: string };
 
@@ -40,7 +40,13 @@ export function PersonaSwitcher({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button type="button" variant="outline" className="rounded-xl"><Mask className="mr-2 size-4" /> View as</Button>} />
+      <DropdownMenuTrigger
+        className={cn(
+          "inline-flex h-9 items-center justify-center rounded-xl border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        )}
+      >
+        <Shield className="mr-2 size-4" /> View as
+      </DropdownMenuTrigger>
       <DropdownMenuContent className="w-72">
         <div className="px-2 py-1 text-xs text-muted-foreground">Owner</div>
         {grouped.owner.map((u) => (

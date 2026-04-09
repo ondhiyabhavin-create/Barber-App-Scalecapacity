@@ -12,6 +12,7 @@ import {
 } from "date-fns";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { generateSlotStatesForDay, type WorkingHourRow, type BusyRange, type SlotState } from "@/lib/slots";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { MockPaymentSuccess } from "@/components/booking/mock-payment-success";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
+import { CountryCodeSelect } from "@/components/shared/country-code-select";
 
 function normalizeBusyJson(raw: unknown): { start: string; end: string }[] {
   if (!raw) return [];
@@ -74,6 +76,7 @@ type Props = {
 const STEP_LABELS = ["Service", "Barber", "Time", "Details", "Payment", "Confirm"];
 
 export function PublicBookingFlow({ slug, initialShop }: Props) {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [shop] = useState<ShopPayload | null>(initialShop);
   const [step, setStep] = useState(0);
@@ -88,7 +91,9 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("+1");
+  const [phoneLocal, setPhoneLocal] = useState("");
+  const [prefill, setPrefill] = useState({ name: "", email: "", countryCode: "+1", phoneLocal: "" });
   const [phase, setPhase] = useState<"wizard" | "pay" | "done">("wizard");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "online">("cash");
 
@@ -101,6 +106,44 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     if (!shop?.barbers?.length) return;
     if (!barberId) setBarberId(shop.barbers[0].barber.id);
   }, [shop, barberId]);
+
+  useEffect(() => {
+    void (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const fallbackName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "";
+      const fallbackEmail = user.email ?? "";
+      const fallbackPhone = typeof user.phone === "string" ? user.phone : "";
+
+      const { data: profile } = await supabase
+        .from("users")
+        .select("name, email, phone")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const rawName = (profile?.name as string | null) ?? fallbackName;
+      const rawEmail = (profile?.email as string | null) ?? fallbackEmail;
+      const rawPhone = (profile?.phone as string | null) ?? fallbackPhone;
+      const normalizedPhone = rawPhone.trim();
+      const phoneMatch = normalizedPhone.match(/^(\+\d{1,4})\s*(.*)$/);
+      const nextCountryCode = phoneMatch?.[1] ?? "+1";
+      const nextPhoneLocal = (phoneMatch?.[2] ?? normalizedPhone).trim();
+
+      setPrefill({
+        name: rawName?.trim() ?? "",
+        email: rawEmail?.trim() ?? "",
+        countryCode: nextCountryCode,
+        phoneLocal: nextPhoneLocal,
+      });
+      setName(rawName?.trim() ?? "");
+      setEmail(rawEmail?.trim() ?? "");
+      setCountryCode(nextCountryCode);
+      setPhoneLocal(nextPhoneLocal);
+    })();
+  }, [supabase]);
 
   const selectedService = shop?.services.find((s) => s.id === serviceId);
   const selectedBarber = shop?.barbers.find((b) => b.barber.id === barberId);
@@ -170,6 +213,7 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     return /^[\d\s+().-]{7,}$/.test(p.trim());
   }
 
+  const phone = phoneLocal.trim() ? `${countryCode} ${phoneLocal.trim()}` : "";
   const detailsValid =
     name.trim().length > 0 && emailValid(email) && phoneValid(phone);
 
@@ -278,6 +322,17 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
         transition={{ duration: 0.35 }}
         className="space-y-6"
       >
+        <div className="flex items-center justify-start">
+          <Button
+            type="button"
+            variant="ghost"
+            className="rounded-xl px-2 text-muted-foreground hover:text-foreground"
+            onClick={() => router.back()}
+          >
+            <ChevronLeft className="mr-1 size-4" />
+            Back
+          </Button>
+        </div>
         <div
           className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 via-card/50 to-accent/5 p-6 backdrop-blur-xl sm:p-8 md:p-8"
           style={{
@@ -578,15 +633,18 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="pb-phone">Phone</Label>
-                      <Input
-                        id="pb-phone"
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="h-11 rounded-xl"
-                        autoComplete="tel"
-                        placeholder="+1 …"
-                      />
+                      <div className="flex gap-2">
+                        <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                        <Input
+                          id="pb-phone"
+                          type="tel"
+                          value={phoneLocal}
+                          onChange={(e) => setPhoneLocal(e.target.value)}
+                          className="h-11 rounded-xl"
+                          autoComplete="tel-national"
+                          placeholder="98765 43210"
+                        />
+                      </div>
                       {phone && !phoneValid(phone) ? (
                         <p className="text-xs text-destructive">Enter a valid phone number</p>
                       ) : null}
@@ -676,9 +734,10 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                     setPhase("wizard");
                     setStep(0);
                     setSlot(null);
-                    setName("");
-                    setEmail("");
-                    setPhone("");
+                    setName(prefill.name);
+                    setEmail(prefill.email);
+                    setCountryCode(prefill.countryCode);
+                    setPhoneLocal(prefill.phoneLocal);
                   }}
                 />
               </CardContent>
@@ -699,9 +758,10 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                     setPhase("wizard");
                     setStep(0);
                     setSlot(null);
-                    setName("");
-                    setEmail("");
-                    setPhone("");
+                    setName(prefill.name);
+                    setEmail(prefill.email);
+                    setCountryCode(prefill.countryCode);
+                    setPhoneLocal(prefill.phoneLocal);
                   }}
                 >
                   Book another

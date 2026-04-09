@@ -5,6 +5,7 @@
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
     "lint": "pnpm --filter web lint",
+    "seed:all": "pnpm --filter web seed:all",
     "seed:test-users": "pnpm --filter web seed:test-users",
     "android:sync": "pnpm --filter web cap:sync",
     "android:open": "pnpm --filter web cap:android"

@@ -35,7 +35,7 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [countryCode, setCountryCode] = useState("🇺🇸 +1");
+  const [countryCode, setCountryCode] = useState("+1");
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
   const [moreDetails, setMoreDetails] = useState(false);
@@ -50,7 +50,7 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
     return () => cancelAnimationFrame(t);
   }, [open]);
 
-  const fullPhone = `${countryCode.replace(/[^\d+]/g, "").trim()} ${phone.trim()}`.trim();
+  const fullPhone = `${countryCode.trim()} ${phone.trim()}`.trim();
   const valid = name.trim().length > 0 && emailOk(email) && phoneOk(fullPhone);
 
   async function save() {
@@ -77,7 +77,7 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
       name: name.trim(),
       email: email.trim() || null,
       phone: phone.trim()
-        ? `${countryCode.replace(/[^\d+]/g, "").trim()} ${phone.trim()}`.trim()
+        ? `${countryCode.trim()} ${phone.trim()}`.trim()
         : null,
       haircut_notes: notes.trim() || null,
       tags: tagList.length ? tagList : [],
@@ -92,7 +92,7 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
     setName("");
     setEmail("");
     setPhone("");
-    setCountryCode("🇺🇸 +1");
+    setCountryCode("+1");
     setNotes("");
     setTags("");
     router.refresh();

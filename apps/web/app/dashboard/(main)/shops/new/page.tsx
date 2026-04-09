@@ -14,7 +14,7 @@ export default async function NewShopPage() {
       title="Create new shop"
       description="Set up business details, branding, location, geo coordinates, and operations."
     >
-      <ShopCreationWizard ownerUserId={user.id} />
+      <ShopCreationWizard />
     </PageShell>
   );
 }

@@ -85,7 +85,7 @@ export function CountryCodeSelect({
                     key={`${country.code}-${country.dial}`}
                     type="button"
                     onClick={() => {
-                      onChange(composed);
+                      onChange(country.dial);
                       setOpen(false);
                       setQuery("");
                     }}
