@@ -1,0 +1,5 @@
+# For local development: https://supabase.com/docs/guides/cli
+project_id = "barberos"
+
+[api]
+enabled = true

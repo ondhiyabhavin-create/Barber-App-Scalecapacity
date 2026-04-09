@@ -1,0 +1,10 @@
+{
+  "name": "barberos",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm --filter web lint"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
