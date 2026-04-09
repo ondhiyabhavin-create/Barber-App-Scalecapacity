@@ -1,86 +1,83 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Users } from "lucide-react";
 import { getSessionProfile } from "@/lib/auth/profile";
 import { createClient } from "@/lib/supabase/server";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ClientQuickAdd } from "@/components/clients/client-quick-add";
+import { ClientsTable, type ClientRow } from "@/components/clients/clients-table";
 
 export default async function ClientsPage() {
-  const { tenant } = await getSessionProfile();
+  const { tenant, profile } = await getSessionProfile();
+  if (profile?.role === "client") {
+    redirect("/dashboard");
+  }
   const supabase = await createClient();
   if (!tenant?.id) return null;
 
-  const { data: clients } = await supabase
+  const { data: rows } = await supabase
     .from("clients")
     .select("*")
     .eq("tenant_id", tenant.id)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
+
+  const clients: ClientRow[] = (rows ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    phone: c.phone,
+    lifetime_value: c.lifetime_value != null ? Number(c.lifetime_value) : null,
+    tags: Array.isArray(c.tags) ? c.tags : null,
+    created_at: c.created_at,
+  }));
 
   return (
-    <div className="space-y-6">
+    <div className="app-content-max space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
             CRM
           </p>
-          <h1 className="font-heading text-3xl font-semibold">Clients</h1>
-          <p className="text-muted-foreground">
+          <h1 className="font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+            <span className="text-gradient">Clients</span>
+          </h1>
+          <p className="max-w-xl text-muted-foreground">
             Profiles, notes, tags, and lifetime value.
           </p>
         </div>
-        <ClientQuickAdd tenantId={tenant.id} />
+        {clients.length > 0 ? <ClientQuickAdd tenantId={tenant.id} /> : null}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {clients?.length ? (
-          clients.map((c) => (
-            <Card
-              key={c.id}
-              className="glass-panel border-border/60 bg-card/50 transition hover:border-primary/40"
-            >
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between gap-2">
-                  <Link
-                    href={`/dashboard/clients/${c.id}`}
-                    className="hover:underline"
-                  >
-                    {c.name}
-                  </Link>
-                  <span className="text-sm font-normal text-muted-foreground">
-                    ${Number(c.lifetime_value ?? 0).toFixed(0)} LTV
-                  </span>
-                </CardTitle>
-                <CardDescription>
-                  {c.email ?? "No email"} · {c.phone ?? "No phone"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2">
-                {(c.tags as string[] | null)?.map((t) => (
-                  <Badge key={t} variant="secondary">
-                    {t}
-                  </Badge>
-                ))}
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <Card className="glass-panel border-dashed border-border/60 bg-card/30 md:col-span-2">
-            <CardHeader>
-              <CardTitle>No clients yet</CardTitle>
-              <CardDescription>
-                Add walk-ins or import from bookings — start with a quick add.
+      {clients.length > 0 ? (
+        <ClientsTable clients={clients} />
+      ) : (
+        <Card className="shine-border overflow-hidden rounded-2xl border-0 border-dashed bg-transparent p-[1px]">
+          <div className="glass-strong rounded-[15px] border-dashed border-border/50 px-6 py-14 text-center">
+            <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
+              <Users className="size-8" aria-hidden />
+            </div>
+            <CardHeader className="p-0">
+              <CardTitle className="font-heading text-2xl">Add your first client</CardTitle>
+              <CardDescription className="mx-auto max-w-md text-base">
+                Walk-ins and booking guests appear here — start with a quick add, or import when
+                that&apos;s ready.
               </CardDescription>
             </CardHeader>
-          </Card>
-        )}
-      </div>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <ClientQuickAdd tenantId={tenant.id} />
+              <Button type="button" variant="outline" className="rounded-xl" disabled>
+                Import (soon)
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

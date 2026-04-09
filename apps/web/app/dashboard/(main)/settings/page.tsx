@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getSessionProfile } from "@/lib/auth/profile";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -8,21 +10,29 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const { profile } = await getSessionProfile();
+  if (profile?.role !== "owner") {
+    redirect("/dashboard");
+  }
+
   return (
-    <div className="space-y-8">
-      <div>
-        <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+    <div className="mx-auto max-w-5xl space-y-10">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
           Settings
         </p>
-        <h1 className="font-heading text-3xl font-semibold">Workspace</h1>
-        <p className="text-muted-foreground">
+        <h1 className="font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+          <span className="text-gradient">Workspace</span>
+        </h1>
+        <p className="max-w-xl text-muted-foreground">
           Billing, Stripe, and plan limits — Phase 2 when you enable real
           payments.
         </p>
       </div>
 
-      <Card className="glass-panel border-border/60 bg-card/50">
+      <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
+        <div className="glass-strong rounded-[15px]">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
             <CardTitle className="text-lg">Stripe Connect</CardTitle>
@@ -55,9 +65,11 @@ export default function SettingsPage() {
             .
           </p>
         </CardContent>
+        </div>
       </Card>
 
-      <Card className="glass-panel border-border/60 bg-card/50">
+      <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
+        <div className="glass-strong rounded-[15px]">
         <CardHeader>
           <CardTitle className="text-lg">Plans</CardTitle>
           <CardDescription>Free · Pro · Studio · Enterprise</CardDescription>
@@ -66,6 +78,7 @@ export default function SettingsPage() {
           Plan enforcement will run via Edge Functions (booking limits, barber
           seats, marketing gates). Not enforced in this demo build.
         </CardContent>
+        </div>
       </Card>
     </div>
   );

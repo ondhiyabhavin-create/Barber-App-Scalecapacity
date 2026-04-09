@@ -6,7 +6,10 @@ import { ClientNotesForm } from "@/components/clients/client-notes-form";
 type Props = { params: { id: string } };
 
 export default async function ClientDetailPage({ params }: Props) {
-  const { tenant } = await getSessionProfile();
+  const { tenant, profile } = await getSessionProfile();
+  if (profile?.role === "client") {
+    redirect("/dashboard");
+  }
   if (!tenant?.id) redirect("/dashboard/onboarding");
 
   const supabase = await createClient();
@@ -36,18 +39,20 @@ export default async function ClientDetailPage({ params }: Props) {
     .limit(20);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+    <div className="mx-auto max-w-4xl space-y-10">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
           Client
         </p>
-        <h1 className="font-heading text-3xl font-semibold">{client.name}</h1>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+          <span className="text-gradient">{client.name}</span>
+        </h1>
         <p className="text-muted-foreground">
           {client.email ?? "—"} · {client.phone ?? "—"}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           Lifetime value:{" "}
-          <span className="text-foreground">
+          <span className="font-medium text-foreground">
             ${Number(client.lifetime_value ?? 0).toFixed(2)}
           </span>
         </p>

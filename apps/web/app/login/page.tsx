@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { LoginForm } from "@/components/auth/login-form";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -16,15 +17,22 @@ export default async function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-background">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(201,168,76,0.1),_transparent_55%)]" />
-      <header className="relative z-10 flex items-center justify-between px-6 py-5">
-        <Link href="/" className="font-heading text-lg font-semibold">
-          BarberOS
+    <div className="app-page">
+      <div className="pointer-events-none absolute inset-0 app-grid opacity-[0.35] dark:opacity-[0.3]" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background" />
+      <header className="relative z-10 flex items-center justify-between px-5 py-5 md:px-10">
+        <Link
+          href="/"
+          className="group flex items-center gap-2.5 font-heading text-lg font-semibold tracking-tight"
+        >
+          <span className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-accent/15 text-primary ring-1 ring-primary/25 transition group-hover:from-primary/30 group-hover:to-accent/25">
+            <Sparkles className="size-5" />
+          </span>
+          <span className="text-gradient-accent">BarberOS</span>
         </Link>
         <ModeToggle />
       </header>
-      <div className="relative z-10 flex justify-center px-4 pb-16 pt-8">
+      <div className="relative z-10 flex justify-center px-4 pb-20 pt-6 md:pt-10">
         <LoginForm />
       </div>
     </div>

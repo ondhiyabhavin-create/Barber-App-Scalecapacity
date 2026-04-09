@@ -1,13 +1,19 @@
--- BarberOS core schema: multi-tenant barbershop SaaS
--- Apply via Supabase CLI: supabase db push / or SQL editor
+-- =============================================================================
+-- BarberOS — ONE FILE: full schema (tables, RLS helpers, policies, RPCs, storage)
+-- Run in Supabase → SQL Editor (select all → Run).
+--
+-- • New project: run the whole file.
+-- • Already have tables: CREATE TABLE IF NOT EXISTS will skip tables; policies/functions
+--   are recreated (DROP POLICY IF EXISTS + CREATE OR REPLACE).
+-- =============================================================================
 
--- Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Enums / check constraints via text + app validation
--- Roles: owner | staff | client
+-- ---------------------------------------------------------------------------
+-- Tables
+-- ---------------------------------------------------------------------------
 
-CREATE TABLE public.tenants (
+CREATE TABLE IF NOT EXISTS public.tenants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   slug text NOT NULL UNIQUE,
@@ -26,7 +32,7 @@ CREATE TABLE public.tenants (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE public.users (
+CREATE TABLE IF NOT EXISTS public.users (
   id uuid PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
   tenant_id uuid REFERENCES public.tenants (id) ON DELETE CASCADE,
   role text NOT NULL CHECK (role IN ('owner', 'staff', 'client')),
@@ -37,9 +43,9 @@ CREATE TABLE public.users (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX users_tenant_id_idx ON public.users (tenant_id);
+CREATE INDEX IF NOT EXISTS users_tenant_id_idx ON public.users (tenant_id);
 
-CREATE TABLE public.barbers (
+CREATE TABLE IF NOT EXISTS public.barbers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.tenants (id) ON DELETE CASCADE,
   user_id uuid REFERENCES public.users (id) ON DELETE SET NULL,
@@ -51,9 +57,9 @@ CREATE TABLE public.barbers (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX barbers_tenant_id_idx ON public.barbers (tenant_id);
+CREATE INDEX IF NOT EXISTS barbers_tenant_id_idx ON public.barbers (tenant_id);
 
-CREATE TABLE public.services (
+CREATE TABLE IF NOT EXISTS public.services (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.tenants (id) ON DELETE CASCADE,
   name text NOT NULL,
@@ -65,9 +71,9 @@ CREATE TABLE public.services (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX services_tenant_id_idx ON public.services (tenant_id);
+CREATE INDEX IF NOT EXISTS services_tenant_id_idx ON public.services (tenant_id);
 
-CREATE TABLE public.working_hours (
+CREATE TABLE IF NOT EXISTS public.working_hours (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   barber_id uuid NOT NULL REFERENCES public.barbers (id) ON DELETE CASCADE,
   day_of_week integer NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
@@ -76,9 +82,9 @@ CREATE TABLE public.working_hours (
   UNIQUE (barber_id, day_of_week)
 );
 
-CREATE INDEX working_hours_barber_id_idx ON public.working_hours (barber_id);
+CREATE INDEX IF NOT EXISTS working_hours_barber_id_idx ON public.working_hours (barber_id);
 
-CREATE TABLE public.clients (
+CREATE TABLE IF NOT EXISTS public.clients (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.tenants (id) ON DELETE CASCADE,
   name text NOT NULL,
@@ -92,10 +98,10 @@ CREATE TABLE public.clients (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX clients_tenant_id_idx ON public.clients (tenant_id);
-CREATE INDEX clients_email_idx ON public.clients (tenant_id, email);
+CREATE INDEX IF NOT EXISTS clients_tenant_id_idx ON public.clients (tenant_id);
+CREATE INDEX IF NOT EXISTS clients_email_idx ON public.clients (tenant_id, email);
 
-CREATE TABLE public.appointments (
+CREATE TABLE IF NOT EXISTS public.appointments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.tenants (id) ON DELETE CASCADE,
   client_id uuid NOT NULL REFERENCES public.clients (id) ON DELETE CASCADE,
@@ -112,10 +118,10 @@ CREATE TABLE public.appointments (
   CONSTRAINT appointments_time_order CHECK (end_time > start_time)
 );
 
-CREATE INDEX appointments_tenant_start_idx ON public.appointments (tenant_id, start_time);
-CREATE INDEX appointments_barber_start_idx ON public.appointments (barber_id, start_time);
+CREATE INDEX IF NOT EXISTS appointments_tenant_start_idx ON public.appointments (tenant_id, start_time);
+CREATE INDEX IF NOT EXISTS appointments_barber_start_idx ON public.appointments (barber_id, start_time);
 
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.tenants (id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES public.users (id) ON DELETE CASCADE,
@@ -125,9 +131,12 @@ CREATE TABLE public.notifications (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX notifications_user_idx ON public.notifications (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS notifications_user_idx ON public.notifications (user_id, created_at DESC);
 
+-- ---------------------------------------------------------------------------
 -- Row Level Security
+-- ---------------------------------------------------------------------------
+
 ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.barbers ENABLE ROW LEVEL SECURITY;
@@ -137,23 +146,58 @@ ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
--- Tenant members can read/update their tenant
+-- RLS helpers (avoid infinite recursion on public.users policies)
+CREATE OR REPLACE FUNCTION public.current_user_tenant_id()
+RETURNS uuid
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT tenant_id FROM public.users WHERE id = auth.uid() LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION public.current_user_owner_tenant_id()
+RETURNS uuid
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT tenant_id FROM public.users WHERE id = auth.uid() AND role = 'owner' LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION public.current_user_tenant_id() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.current_user_owner_tenant_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.current_user_tenant_id() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.current_user_owner_tenant_id() TO authenticated;
+
+DROP POLICY IF EXISTS "tenants_select_member" ON public.tenants;
+DROP POLICY IF EXISTS "tenants_update_owner" ON public.tenants;
+DROP POLICY IF EXISTS "users_select_same_tenant" ON public.users;
+DROP POLICY IF EXISTS "users_update_self" ON public.users;
+DROP POLICY IF EXISTS "users_insert_self" ON public.users;
+DROP POLICY IF EXISTS "barbers_all_tenant" ON public.barbers;
+DROP POLICY IF EXISTS "services_all_tenant" ON public.services;
+DROP POLICY IF EXISTS "working_hours_all_tenant" ON public.working_hours;
+DROP POLICY IF EXISTS "clients_all_tenant" ON public.clients;
+DROP POLICY IF EXISTS "appointments_all_tenant" ON public.appointments;
+DROP POLICY IF EXISTS "notifications_own" ON public.notifications;
+
 CREATE POLICY "tenants_select_member" ON public.tenants
   FOR SELECT TO authenticated
-  USING (id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()));
+  USING (id = public.current_user_tenant_id());
 
 CREATE POLICY "tenants_update_owner" ON public.tenants
   FOR UPDATE TO authenticated
-  USING (
-    id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid() AND role = 'owner')
-  );
+  USING (id = public.current_user_owner_tenant_id());
 
--- Tenant creation only via bootstrap_owner_shop (see below)
-
--- Users: members of same tenant
 CREATE POLICY "users_select_same_tenant" ON public.users
   FOR SELECT TO authenticated
-  USING (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()));
+  USING (
+    id = auth.uid()
+    OR tenant_id = public.current_user_tenant_id()
+  );
 
 CREATE POLICY "users_update_self" ON public.users
   FOR UPDATE TO authenticated
@@ -163,50 +207,50 @@ CREATE POLICY "users_insert_self" ON public.users
   FOR INSERT TO authenticated
   WITH CHECK (id = auth.uid());
 
--- Barber/service/hours/clients/appointments/notifications: tenant scoped
 CREATE POLICY "barbers_all_tenant" ON public.barbers
   FOR ALL TO authenticated
-  USING (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()))
-  WITH CHECK (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()));
+  USING (tenant_id = public.current_user_tenant_id())
+  WITH CHECK (tenant_id = public.current_user_tenant_id());
 
 CREATE POLICY "services_all_tenant" ON public.services
   FOR ALL TO authenticated
-  USING (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()))
-  WITH CHECK (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()));
+  USING (tenant_id = public.current_user_tenant_id())
+  WITH CHECK (tenant_id = public.current_user_tenant_id());
 
 CREATE POLICY "working_hours_all_tenant" ON public.working_hours
   FOR ALL TO authenticated
   USING (
     barber_id IN (
       SELECT b.id FROM public.barbers b
-      JOIN public.users u ON u.tenant_id = b.tenant_id
-      WHERE u.id = auth.uid()
+      WHERE b.tenant_id = public.current_user_tenant_id()
     )
   )
   WITH CHECK (
     barber_id IN (
       SELECT b.id FROM public.barbers b
-      JOIN public.users u ON u.tenant_id = b.tenant_id
-      WHERE u.id = auth.uid()
+      WHERE b.tenant_id = public.current_user_tenant_id()
     )
   );
 
 CREATE POLICY "clients_all_tenant" ON public.clients
   FOR ALL TO authenticated
-  USING (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()))
-  WITH CHECK (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()));
+  USING (tenant_id = public.current_user_tenant_id())
+  WITH CHECK (tenant_id = public.current_user_tenant_id());
 
 CREATE POLICY "appointments_all_tenant" ON public.appointments
   FOR ALL TO authenticated
-  USING (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()))
-  WITH CHECK (tenant_id IN (SELECT tenant_id FROM public.users WHERE id = auth.uid()));
+  USING (tenant_id = public.current_user_tenant_id())
+  WITH CHECK (tenant_id = public.current_user_tenant_id());
 
 CREATE POLICY "notifications_own" ON public.notifications
   FOR ALL TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
--- Public booking: SECURITY DEFINER RPCs (no broad anon SELECT on tenants)
+-- ---------------------------------------------------------------------------
+-- RPCs: public booking + owner bootstrap
+-- ---------------------------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.get_public_shop(p_slug text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -386,10 +430,44 @@ $$;
 REVOKE ALL ON FUNCTION public.create_public_booking(text, uuid, uuid, timestamptz, text, text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_public_booking(text, uuid, uuid, timestamptz, text, text, text, text) TO anon, authenticated;
 
--- Storage buckets (public logos / shop photos)
+CREATE OR REPLACE FUNCTION public.get_public_busy_ranges(
+  p_barber_id uuid,
+  p_range_start timestamptz,
+  p_range_end timestamptz
+)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT jsonb_agg(jsonb_build_object('start', start_time, 'end', end_time))
+      FROM public.appointments
+      WHERE barber_id = p_barber_id
+        AND status NOT IN ('cancelled')
+        AND start_time < p_range_end
+        AND end_time > p_range_start
+    ),
+    '[]'::jsonb
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.get_public_busy_ranges(uuid, timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_public_busy_ranges(uuid, timestamptz, timestamptz) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Storage: shop logos / assets
+-- ---------------------------------------------------------------------------
+
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('shop-assets', 'shop-assets', true)
 ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Shop assets public read" ON storage.objects;
+DROP POLICY IF EXISTS "Shop assets upload authenticated" ON storage.objects;
+DROP POLICY IF EXISTS "Shop assets update own" ON storage.objects;
+DROP POLICY IF EXISTS "Shop assets delete own" ON storage.objects;
 
 CREATE POLICY "Shop assets public read"
   ON storage.objects FOR SELECT

@@ -12,7 +12,7 @@ export function LogoutButton() {
       type="button"
       variant="ghost"
       size="sm"
-      className="w-full"
+      className="w-full justify-center rounded-xl text-muted-foreground hover:text-foreground"
       onClick={async () => {
         const supabase = createClient();
         await supabase.auth.signOut();

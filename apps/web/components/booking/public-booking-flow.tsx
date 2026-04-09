@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { endOfDay, format, startOfDay } from "date-fns";
+import {
+  addDays,
+  endOfDay,
+  format,
+  isBefore,
+  isSameDay,
+  startOfDay,
+  startOfWeek,
+} from "date-fns";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { generateSlotsForDay, type WorkingHourRow, type BusyRange } from "@/lib/slots";
@@ -15,17 +23,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { MockPaymentSuccess } from "@/components/booking/mock-payment-success";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 function normalizeBusyJson(raw: unknown): { start: string; end: string }[] {
   if (!raw) return [];
@@ -66,19 +69,25 @@ type Props = {
   initialShop: ShopPayload | null;
 };
 
+const STEP_LABELS = ["Service", "Barber", "Time", "Details", "Confirm"];
+
 export function PublicBookingFlow({ slug, initialShop }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [shop] = useState<ShopPayload | null>(initialShop);
+  const [step, setStep] = useState(0);
   const [serviceId, setServiceId] = useState<string>("");
   const [barberId, setBarberId] = useState<string>("");
   const [day, setDay] = useState<string>(() => format(new Date(), "yyyy-MM-dd"));
+  const [weekAnchor, setWeekAnchor] = useState(() =>
+    startOfWeek(new Date(), { weekStartsOn: 1 })
+  );
   const [slot, setSlot] = useState<Date | null>(null);
   const [slots, setSlots] = useState<Date[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [step, setStep] = useState<"pick" | "pay">("pick");
+  const [phase, setPhase] = useState<"wizard" | "pay">("wizard");
 
   useEffect(() => {
     if (!shop?.services?.length) return;
@@ -135,6 +144,32 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     })();
   }, [supabase, selectedService, selectedBarber, day]);
 
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => addDays(weekAnchor, i));
+  }, [weekAnchor]);
+
+  const morningSlots = useMemo(
+    () => slots.filter((s) => s.getHours() < 12),
+    [slots]
+  );
+  const afternoonSlots = useMemo(
+    () => slots.filter((s) => s.getHours() >= 12),
+    [slots]
+  );
+
+  function emailValid(e: string) {
+    if (!e.trim()) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+  }
+
+  function phoneValid(p: string) {
+    if (!p.trim()) return true;
+    return /^[\d\s+().-]{7,}$/.test(p.trim());
+  }
+
+  const detailsValid =
+    name.trim().length > 0 && emailValid(email) && phoneValid(phone);
+
   async function confirmBooking() {
     if (!selectedService || !selectedBarber || !slot) {
       toast.error("Pick a time");
@@ -142,6 +177,14 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     }
     if (!name.trim()) {
       toast.error("Name required");
+      return;
+    }
+    if (!emailValid(email)) {
+      toast.error("Enter a valid email or leave it blank");
+      return;
+    }
+    if (!phoneValid(phone)) {
+      toast.error("Enter a valid phone or leave it blank");
       return;
     }
 
@@ -161,7 +204,35 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
       return;
     }
 
-    setStep("pay");
+    setPhase("pay");
+  }
+
+  function canContinue(): boolean {
+    if (step === 0) return Boolean(serviceId && shop?.services.some((s) => s.id === serviceId));
+    if (step === 1) return Boolean(barberId && shop?.barbers.some((b) => b.barber.id === barberId));
+    if (step === 2) return slot !== null;
+    if (step === 3) return detailsValid;
+    if (step === 4)
+      return Boolean(
+        selectedService &&
+          selectedBarber &&
+          slot &&
+          detailsValid
+      );
+    return false;
+  }
+
+  function goNext() {
+    if (!canContinue()) {
+      if (step === 3) toast.error("Check your details");
+      return;
+    }
+    if (step < 4) setStep((s) => s + 1);
+    else void confirmBooking();
+  }
+
+  function goBack() {
+    if (step > 0) setStep((s) => s - 1);
   }
 
   if (!shop) {
@@ -175,19 +246,24 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     );
   }
 
+  const tz =
+    typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : "local time";
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+    <div className="flex min-h-[min(100dvh,900px)] flex-col pb-28 md:pb-8">
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="space-y-4"
+        className="space-y-6"
       >
         <div
-          className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/40 p-8 backdrop-blur-xl"
+          className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-primary/10 via-card/50 to-accent/5 p-6 backdrop-blur-xl sm:p-8 md:p-8"
           style={{
             backgroundImage: shop.tenant.logo_url
-              ? `linear-gradient(120deg, rgba(17,17,17,0.92), rgba(17,17,17,0.55)), url(${shop.tenant.logo_url})`
+              ? `linear-gradient(120deg, color-mix(in srgb, var(--foreground) 82%, transparent), color-mix(in srgb, var(--primary) 28%, transparent)), url(${shop.tenant.logo_url})`
               : undefined,
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -196,7 +272,7 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
           <div className="relative space-y-2">
             <p className="text-xs uppercase tracking-[0.3em] text-primary">Book online</p>
-            <h1 className="font-heading text-4xl font-semibold">{shop.tenant.name}</h1>
+            <h1 className="font-heading text-3xl font-semibold sm:text-4xl">{shop.tenant.name}</h1>
             <p className="text-sm text-muted-foreground">
               {shop.tenant.address_line ?? ""}
               {shop.tenant.city ? ` · ${shop.tenant.city}` : ""}
@@ -204,117 +280,373 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
           </div>
         </div>
 
-        <Card className="glass-panel border-border/60 bg-card/50">
-          <CardHeader>
-            <CardTitle>Service</CardTitle>
-            <CardDescription>Choose a service — duration drives available slots.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Service</Label>
-              <Select
-                value={serviceId}
-                onValueChange={(v) => v && setServiceId(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {shop.services.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} · {(s.price_cents / 100).toFixed(0)} USD · {s.duration_min}m
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        {/* Stepper */}
+        <div className="rounded-2xl border border-border/50 bg-card/40 px-3 py-4 shadow-sm backdrop-blur-md sm:px-4">
+          <p className="mb-3 text-center text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            Step {step + 1} of {STEP_LABELS.length}
+          </p>
+          <div className="flex items-center justify-between gap-1 overflow-x-auto pb-1 sm:justify-center sm:gap-2">
+            {STEP_LABELS.map((label, i) => (
+              <div key={label} className="flex min-w-0 flex-1 flex-col items-center gap-1 sm:flex-initial sm:min-w-[4.5rem]">
+                <div
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-full text-xs font-semibold transition-colors",
+                    i < step
+                      ? "bg-primary text-primary-foreground"
+                      : i === step
+                        ? "bg-primary/20 text-primary ring-2 ring-primary/40"
+                        : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {i < step ? "✓" : i + 1}
+                </div>
+                <span
+                  className={cn(
+                    "hidden text-[10px] font-medium sm:block",
+                    i === step ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {phase === "wizard" && (
+          <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
+            <div className="glass-strong rounded-[15px]">
+              <CardHeader className="pb-2">
+                <CardTitle className="font-heading text-lg">
+                  {step === 0 && "Choose a service"}
+                  {step === 1 && "Choose your barber"}
+                  {step === 2 && "Pick a time"}
+                  {step === 3 && "Your details"}
+                  {step === 4 && "Review & confirm"}
+                </CardTitle>
+                <CardDescription>
+                  {step === 2 && selectedService
+                    ? `${format(new Date(day + "T12:00:00"), "EEE, MMM d")} · ${selectedService.duration_min} min · Times in ${tz}`
+                    : step === 4
+                      ? "Confirm your appointment before demo payment."
+                      : " "}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5 pb-6">
+                {step === 0 && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {shop.services.map((s) => {
+                      const active = s.id === serviceId;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setServiceId(s.id)}
+                          className={cn(
+                            "rounded-xl border p-4 text-left transition-all duration-200 ease-out",
+                            active
+                              ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/30"
+                              : "border-border/70 bg-card/50 hover:border-border hover:bg-muted/50"
+                          )}
+                        >
+                          <p className="font-medium">{s.name}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {(s.price_cents / 100).toFixed(0)} USD · {s.duration_min} min
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {step === 1 && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {shop.barbers.map((b) => {
+                      const active = b.barber.id === barberId;
+                      const initial = b.barber.display_name
+                        .split(/\s+/)
+                        .map((x) => x[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase();
+                      return (
+                        <button
+                          key={b.barber.id}
+                          type="button"
+                          onClick={() => setBarberId(b.barber.id)}
+                          className={cn(
+                            "flex items-center gap-3 rounded-xl border p-4 text-left transition-all duration-200 ease-out",
+                            active
+                              ? "border-primary bg-primary/10 shadow-sm ring-1 ring-primary/30"
+                              : "border-border/70 bg-card/50 hover:border-border hover:bg-muted/50"
+                          )}
+                        >
+                          <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
+                            {b.barber.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={b.barber.avatar_url}
+                                alt=""
+                                className="size-12 rounded-full object-cover"
+                              />
+                            ) : (
+                              initial
+                            )}
+                          </span>
+                          <div>
+                            <p className="font-medium">{b.barber.display_name}</p>
+                            <p className="text-xs text-muted-foreground">Available for booking</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0 rounded-xl"
+                        onClick={() => setWeekAnchor((w) => addDays(w, -7))}
+                        aria-label="Previous week"
+                      >
+                        <ChevronLeft className="size-4" />
+                      </Button>
+                      <p className="text-center text-sm font-medium text-muted-foreground">
+                        {format(weekDays[0], "MMM d")} – {format(weekDays[6], "MMM d")}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0 rounded-xl"
+                        onClick={() => setWeekAnchor((w) => addDays(w, 7))}
+                        aria-label="Next week"
+                      >
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                    <div className="-mx-1 flex gap-2 overflow-x-auto pb-2">
+                      {weekDays.map((d) => {
+                        const key = format(d, "yyyy-MM-dd");
+                        const selected = day === key;
+                        const past = isBefore(startOfDay(d), startOfDay(new Date()));
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            disabled={past}
+                            onClick={() => setDay(key)}
+                            className={cn(
+                              "flex min-w-[3.25rem] flex-col items-center rounded-xl border px-2 py-2 text-xs transition-colors",
+                              selected
+                                ? "border-primary bg-primary/15 text-primary"
+                                : past
+                                  ? "cursor-not-allowed opacity-40"
+                                  : "border-border/60 bg-card/50 hover:border-border"
+                            )}
+                          >
+                            <span className="text-[10px] uppercase text-muted-foreground">
+                              {format(d, "EEE")}
+                            </span>
+                            <span className="font-semibold tabular-nums">{format(d, "d")}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {loadingSlots ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-24" />
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from({ length: 8 }).map((_, i) => (
+                            <Skeleton key={i} className="h-10 w-[4.5rem] rounded-lg" />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {morningSlots.length > 0 ? (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Morning
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {morningSlots.map((s) => (
+                                <Button
+                                  key={s.toISOString()}
+                                  type="button"
+                                  variant={slot && isSameDay(slot, s) && slot.getTime() === s.getTime() ? "default" : "outline"}
+                                  size="sm"
+                                  className="h-10 min-w-[4.5rem] rounded-lg font-mono text-xs"
+                                  onClick={() => setSlot(s)}
+                                >
+                                  {format(s, "HH:mm")}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {afternoonSlots.length > 0 ? (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Afternoon
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {afternoonSlots.map((s) => (
+                                <Button
+                                  key={s.toISOString()}
+                                  type="button"
+                                  variant={slot && isSameDay(slot, s) && slot.getTime() === s.getTime() ? "default" : "outline"}
+                                  size="sm"
+                                  className="h-10 min-w-[4.5rem] rounded-lg font-mono text-xs"
+                                  onClick={() => setSlot(s)}
+                                >
+                                  {format(s, "HH:mm")}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {!morningSlots.length && !afternoonSlots.length ? (
+                          <p className="text-sm text-muted-foreground">No slots this day — try another date.</p>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {step === 3 && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="pb-name">Name</Label>
+                      <Input
+                        id="pb-name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="h-11 rounded-xl"
+                        autoComplete="name"
+                        placeholder="Your name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pb-email">Email</Label>
+                      <Input
+                        id="pb-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="h-11 rounded-xl"
+                        autoComplete="email"
+                        placeholder="you@example.com"
+                      />
+                      {email && !emailValid(email) ? (
+                        <p className="text-xs text-destructive">Enter a valid email</p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pb-phone">Phone</Label>
+                      <Input
+                        id="pb-phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="h-11 rounded-xl"
+                        autoComplete="tel"
+                        placeholder="+1 …"
+                      />
+                      {phone && !phoneValid(phone) ? (
+                        <p className="text-xs text-destructive">Enter a valid phone number</p>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+
+                {step === 4 && selectedService && selectedBarber && slot && (
+                  <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">Service</span>
+                      <span className="text-right font-medium">{selectedService.name}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">Barber</span>
+                      <span className="text-right font-medium">{selectedBarber.barber.display_name}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">When</span>
+                      <span className="text-right font-mono text-sm">
+                        {format(slot, "EEE, MMM d · HH:mm")}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">Guest</span>
+                      <span className="text-right font-medium">{name.trim()}</span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">Total</span>
+                      <span className="text-right font-semibold">
+                        ${(selectedService.price_cents / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
             </div>
-            <div className="space-y-2">
-              <Label>Barber</Label>
-              <Select value={barberId} onValueChange={(v) => v && setBarberId(v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Barber" />
-                </SelectTrigger>
-                <SelectContent>
-                  {shop.barbers.map((b) => (
-                    <SelectItem key={b.barber.id} value={b.barber.id}>
-                      {b.barber.display_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          </Card>
+        )}
+
+        {phase === "pay" && (
+          <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
+            <div className="glass-strong rounded-[15px]">
+              <CardHeader>
+                <CardTitle className="font-heading text-lg">Demo payment</CardTitle>
+                <CardDescription>Your booking is saved — this is a mock checkout.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MockPaymentSuccess
+                  onReset={() => {
+                    setPhase("wizard");
+                    setStep(0);
+                    setSlot(null);
+                    setName("");
+                    setEmail("");
+                    setPhone("");
+                  }}
+                />
+              </CardContent>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="day">Date</Label>
-              <Input id="day" type="date" value={day} onChange={(e) => setDay(e.target.value)} />
-            </div>
-          </CardContent>
-        </Card>
+          </Card>
+        )}
       </motion.div>
 
-      <Card className="glass-panel h-fit border-border/60 bg-card/50">
-        <CardHeader>
-          <CardTitle>Time</CardTitle>
-          <CardDescription>
-            {selectedService
-              ? `Slots respect ${selectedService.duration_min} minute duration.`
-              : "Pick a service"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {loadingSlots ? (
-            <div className="grid grid-cols-3 gap-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-lg" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {slots.map((s) => (
-                <Button
-                  key={s.toISOString()}
-                  type="button"
-                  variant={slot?.getTime() === s.getTime() ? "default" : "outline"}
-                  className="h-10 text-xs"
-                  onClick={() => setSlot(s)}
-                >
-                  {format(s, "HH:mm")}
-                </Button>
-              ))}
-            </div>
-          )}
-
-          <Separator />
-
-          {step === "pick" && (
-            <>
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Phone</Label>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </div>
-              <Button className="w-full" onClick={() => void confirmBooking()}>
-                Continue to demo payment
-              </Button>
-            </>
-          )}
-
-          {step === "pay" && (
-            <MockPaymentSuccess
-              onReset={() => {
-                setStep("pick");
-                setSlot(null);
-              }}
-            />
-          )}
-        </CardContent>
-      </Card>
+      {phase === "wizard" && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-md backdrop-blur-md md:static md:z-auto md:mt-8 md:border-0 md:bg-transparent md:p-0 md:shadow-none md:backdrop-blur-0">
+          <div className="app-content-max flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-w-[5rem] flex-1 rounded-xl sm:flex-none"
+              onClick={goBack}
+              disabled={step === 0}
+            >
+              Back
+            </Button>
+            <Button
+              type="button"
+              className="min-w-0 flex-[2] rounded-xl shadow-md shadow-primary/15 sm:flex-1"
+              onClick={() => void goNext()}
+              disabled={!canContinue()}
+            >
+              {step === 4 ? "Confirm booking" : "Continue"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

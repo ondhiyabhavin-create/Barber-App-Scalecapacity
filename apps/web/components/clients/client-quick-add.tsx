@@ -1,20 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+
+function emailOk(e: string) {
+  if (!e.trim()) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+}
+
+function phoneOk(p: string) {
+  if (!p.trim()) return true;
+  return /^[\d\s+().-]{7,}$/.test(p.trim());
+}
 
 export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
   const router = useRouter();
@@ -22,20 +33,47 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
+  const [tags, setTags] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = requestAnimationFrame(() => {
+      const el = document.getElementById("client-add-name");
+      el?.focus();
+    });
+    return () => cancelAnimationFrame(t);
+  }, [open]);
+
+  const valid = name.trim().length > 0 && emailOk(email) && phoneOk(phone);
 
   async function save() {
     if (!name.trim()) {
-      toast.error("Name required");
+      toast.error("Name is required");
+      return;
+    }
+    if (!emailOk(email)) {
+      toast.error("Enter a valid email or leave it blank");
+      return;
+    }
+    if (!phoneOk(phone)) {
+      toast.error("Enter a valid phone or leave it blank");
       return;
     }
     setLoading(true);
     const supabase = createClient();
+    const tagList = tags
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     const { error } = await supabase.from("clients").insert({
       tenant_id: tenantId,
       name: name.trim(),
       email: email.trim() || null,
       phone: phone.trim() || null,
+      haircut_notes: notes.trim() || null,
+      tags: tagList.length ? tagList : [],
     });
     setLoading(false);
     if (error) {
@@ -47,41 +85,122 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
     setName("");
     setEmail("");
     setPhone("");
+    setNotes("");
+    setTags("");
     router.refresh();
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger>
-        <Button type="button">Add client</Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Quick add client</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-3 py-2">
-          <div className="space-y-2">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Email</Label>
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Phone</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </div>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger
+        className="inline-flex h-9 shrink-0 items-center justify-center rounded-lg border border-transparent bg-primary px-4 text-sm font-medium text-primary-foreground [a]:hover:bg-primary/80"
+      >
+        Add client
+      </SheetTrigger>
+      <SheetContent
+        side="right"
+        className="flex size-full max-w-full flex-col gap-0 p-0 sm:max-w-md"
+        showCloseButton
+      >
+        <SheetHeader className="border-b border-border/50 p-4 text-left">
+          <SheetTitle className="font-heading text-xl">Add client</SheetTitle>
+          <SheetDescription>
+            Identity and optional preferences. Save is enabled when the form is valid.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+          <section className="space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Identity
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="client-add-name">Name</Label>
+              <Input
+                id="client-add-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-11 rounded-xl"
+                autoComplete="name"
+                placeholder="Full name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-add-email">Email</Label>
+              <Input
+                id="client-add-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-11 rounded-xl"
+                autoComplete="email"
+                placeholder="name@example.com"
+              />
+              {email && !emailOk(email) ? (
+                <p className="text-xs text-destructive">Invalid email format</p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-add-phone">Phone</Label>
+              <Input
+                id="client-add-phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="h-11 rounded-xl"
+                autoComplete="tel"
+                placeholder="+1 …"
+              />
+              {phone && !phoneOk(phone) ? (
+                <p className="text-xs text-destructive">Invalid phone format</p>
+              ) : null}
+            </div>
+          </section>
+          <Separator />
+          <section className="space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Preferences (optional)
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="client-add-notes">Notes</Label>
+              <Input
+                id="client-add-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="h-11 rounded-xl"
+                placeholder="e.g. prefers short sides"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-add-tags">Tags</Label>
+              <Input
+                id="client-add-tags"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                className="h-11 rounded-xl"
+                placeholder="e.g. VIP, regular (comma-separated)"
+              />
+            </div>
+          </section>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
+        <div className="flex shrink-0 gap-2 border-t border-border/50 p-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 rounded-xl"
+            onClick={() => setOpen(false)}
+          >
             Cancel
           </Button>
-          <Button onClick={() => void save()} disabled={loading}>
+          <Button
+            type="button"
+            className="flex-1 rounded-xl shadow-md shadow-primary/15"
+            disabled={!valid || loading}
+            onClick={() => void save()}
+          >
             {loading ? "Saving…" : "Save"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

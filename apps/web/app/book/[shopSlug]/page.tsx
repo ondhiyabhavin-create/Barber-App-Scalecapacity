@@ -26,8 +26,11 @@ export async function generateMetadata({ params }: Props) {
 export default async function BookShopPage({ params }: Props) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16 text-center text-muted-foreground">
-        Configure Supabase environment variables to load this page.
+      <div className="app-page">
+        <div className="pointer-events-none absolute inset-0 app-grid opacity-[0.2]" />
+        <div className="relative z-10 mx-auto max-w-3xl px-4 py-16 text-center text-muted-foreground">
+          Configure Supabase environment variables to load this page.
+        </div>
       </div>
     );
   }
@@ -42,11 +45,14 @@ export default async function BookShopPage({ params }: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <PublicBookingFlow
-        slug={params.shopSlug}
-        initialShop={data as ShopPayload}
-      />
+    <div className="app-page">
+      <div className="pointer-events-none absolute inset-0 app-grid opacity-[0.28] dark:opacity-[0.22]" />
+      <div className="relative z-10 mx-auto max-w-6xl px-4 py-10">
+        <PublicBookingFlow
+          slug={params.shopSlug}
+          initialShop={data as ShopPayload}
+        />
+      </div>
     </div>
   );
 }

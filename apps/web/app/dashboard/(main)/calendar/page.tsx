@@ -2,23 +2,30 @@ import { getSessionProfile } from "@/lib/auth/profile";
 import { CalendarBoard } from "@/components/calendar/calendar-board";
 
 export default async function CalendarPage() {
-  const { tenant } = await getSessionProfile();
+  const { tenant, profile } = await getSessionProfile();
   if (!tenant?.id) {
     return null;
   }
 
+  const canCreateAppointment = profile?.role !== "client";
+
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+    <div className="mx-auto max-w-7xl space-y-8">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
           Calendar
         </p>
-        <h1 className="font-heading text-3xl font-semibold">Appointments</h1>
-        <p className="text-muted-foreground">
-          Week view with Supabase Realtime updates when bookings change.
+        <h1 className="font-heading text-3xl font-semibold tracking-tight md:text-4xl">
+          <span className="text-gradient">Appointments</span>
+        </h1>
+        <p className="max-w-xl text-muted-foreground">
+          Week view with Supabase Realtime when bookings change.
         </p>
       </div>
-      <CalendarBoard tenantId={tenant.id} />
+      <CalendarBoard
+        tenantId={tenant.id}
+        canCreateAppointment={canCreateAppointment}
+      />
     </div>
   );
 }

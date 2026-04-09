@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -10,7 +10,7 @@ const inter = Inter({
   variable: "--font-sans",
 });
 
-const playfair = Playfair_Display({
+const outfit = Outfit({
   subsets: ["latin"],
   variable: "--font-heading",
 });
@@ -30,7 +30,7 @@ export default function RootLayout({
       <body
         className={cn(
           inter.variable,
-          playfair.variable,
+          outfit.variable,
           "min-h-screen bg-background font-sans antialiased"
         )}
       >
