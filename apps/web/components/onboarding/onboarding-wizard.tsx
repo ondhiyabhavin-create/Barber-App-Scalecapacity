@@ -6,6 +6,7 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { slugifyName, slugWithCollisionSuffix } from "@/lib/slug";
+import { seedTenantDemoData } from "@/lib/onboarding/seed-demo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +64,12 @@ const stepMeta: {
     subtitle: "Your first service & pricing",
     icon: Scissors,
   },
+  {
+    id: 4,
+    title: "Preview",
+    subtitle: "Add your first barber and preview booking",
+    icon: Sparkles,
+  },
 ];
 
 const typeConfig: Record<
@@ -115,6 +122,8 @@ export function OnboardingWizard({ hasProfile }: Props) {
   const [serviceName, setServiceName] = useState("Signature cut");
   const [durationMin, setDurationMin] = useState(30);
   const [price, setPrice] = useState(45);
+  const [barberName, setBarberName] = useState("Lead Barber");
+  const [seedDemo, setSeedDemo] = useState(true);
 
   useEffect(() => {
     if (!logoFile) {
@@ -259,7 +268,7 @@ export function OnboardingWizard({ hasProfile }: Props) {
     setStep(3);
   }
 
-  async function finish() {
+  async function saveService() {
     const tenantId = await ensureTenantId();
     if (!tenantId) {
       toast.error("Missing tenant");
@@ -302,10 +311,43 @@ export function OnboardingWizard({ hasProfile }: Props) {
       }
     }
 
-    const { error: doneErr } = await supabase
-      .from("tenants")
-      .update({ onboarding_completed: true })
-      .eq("id", tenantId);
+    setLoading(false);
+    setStep(4);
+  }
+
+  async function finish() {
+    const tenantId = await ensureTenantId();
+    if (!tenantId) {
+      toast.error("Missing tenant");
+      return;
+    }
+    setLoading(true);
+    const { data: barber, error: barberErr } = await supabase
+      .from("barbers")
+      .insert({ tenant_id: tenantId, display_name: barberName.trim() || "Lead Barber" })
+      .select("id")
+      .single();
+    if (barberErr) {
+      setLoading(false);
+      toast.error(barberErr.message);
+      return;
+    }
+    for (const day of [1, 2, 3, 4, 5]) {
+      await supabase.from("working_hours").insert({
+        barber_id: barber.id,
+        day_of_week: day,
+        start_time: "09:00:00",
+        end_time: "17:00:00",
+      });
+    }
+    if (seedDemo) {
+      try {
+        await seedTenantDemoData(supabase, tenantId, barber.id);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    const { error: doneErr } = await supabase.from("tenants").update({ onboarding_completed: true }).eq("id", tenantId);
     setLoading(false);
     if (doneErr) {
       toast.error(doneErr.message);
@@ -802,6 +844,60 @@ export function OnboardingWizard({ hasProfile }: Props) {
                       </Button>
                       <Button
                         className="h-12 flex-1 rounded-xl font-semibold shadow-lg shadow-primary/15"
+                        onClick={saveService}
+                        disabled={loading}
+                      >
+                        {loading ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 size-4" />
+                            Continue
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {step === 4 && (
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        First barber
+                      </Label>
+                      <Input
+                        value={barberName}
+                        onChange={(e) => setBarberName(e.target.value)}
+                        className="h-12 rounded-xl border-border/60 bg-background/60"
+                        placeholder="Lead Barber"
+                      />
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-muted/30 p-4 text-sm">
+                      <p className="font-medium">Preview booking page</p>
+                      <p className="mt-1 text-muted-foreground">
+                        Your public booking page will be available after setup completes.
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={seedDemo}
+                        onChange={(e) => setSeedDemo(e.target.checked)}
+                      />
+                      Start with demo data (3 clients, 2 services, 2 appointments)
+                    </label>
+                    <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+                      <Button
+                        variant="outline"
+                        className="h-12 rounded-xl"
+                        onClick={() => setStep(3)}
+                        disabled={loading}
+                      >
+                        <ArrowLeft className="mr-2 size-4" />
+                        Back
+                      </Button>
+                      <Button
+                        className="h-12 flex-1 rounded-xl font-semibold shadow-lg shadow-primary/15"
                         onClick={finish}
                         disabled={loading}
                       >
@@ -810,7 +906,7 @@ export function OnboardingWizard({ hasProfile }: Props) {
                         ) : (
                           <>
                             <Sparkles className="mr-2 size-4" />
-                            Go live
+                            Complete setup
                           </>
                         )}
                       </Button>

@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { SmartAvatar } from "@/components/shared/smart-avatar";
+import { CountryCodeSelect } from "@/components/shared/country-code-select";
 
 function emailOk(e: string) {
   if (!e.trim()) return true;
@@ -33,8 +35,10 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("🇺🇸 +1");
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState("");
+  const [moreDetails, setMoreDetails] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -46,7 +50,8 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
     return () => cancelAnimationFrame(t);
   }, [open]);
 
-  const valid = name.trim().length > 0 && emailOk(email) && phoneOk(phone);
+  const fullPhone = `${countryCode.replace(/[^\d+]/g, "").trim()} ${phone.trim()}`.trim();
+  const valid = name.trim().length > 0 && emailOk(email) && phoneOk(fullPhone);
 
   async function save() {
     if (!name.trim()) {
@@ -57,7 +62,7 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
       toast.error("Enter a valid email or leave it blank");
       return;
     }
-    if (!phoneOk(phone)) {
+    if (!phoneOk(fullPhone)) {
       toast.error("Enter a valid phone or leave it blank");
       return;
     }
@@ -71,7 +76,9 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
       tenant_id: tenantId,
       name: name.trim(),
       email: email.trim() || null,
-      phone: phone.trim() || null,
+      phone: phone.trim()
+        ? `${countryCode.replace(/[^\d+]/g, "").trim()} ${phone.trim()}`.trim()
+        : null,
       haircut_notes: notes.trim() || null,
       tags: tagList.length ? tagList : [],
     });
@@ -85,6 +92,7 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
     setName("");
     setEmail("");
     setPhone("");
+    setCountryCode("🇺🇸 +1");
     setNotes("");
     setTags("");
     router.refresh();
@@ -141,45 +149,63 @@ export function ClientQuickAdd({ tenantId }: { tenantId: string }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="client-add-phone">Phone</Label>
-              <Input
-                id="client-add-phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="h-11 rounded-xl"
-                autoComplete="tel"
-                placeholder="+1 …"
-              />
-              {phone && !phoneOk(phone) ? (
+              <div className="flex gap-2">
+                <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+                <Input
+                  id="client-add-phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="h-11 rounded-xl"
+                  autoComplete="tel"
+                  placeholder="555 555 1234"
+                />
+              </div>
+              {phone && !phoneOk(fullPhone) ? (
                 <p className="text-xs text-destructive">Invalid phone format</p>
               ) : null}
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
+              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">Avatar preview</p>
+              <div className="flex items-center gap-3">
+                <SmartAvatar name={name || "New client"} />
+                <p className="text-sm text-muted-foreground">Auto-generated initials + color.</p>
+              </div>
             </div>
           </section>
           <Separator />
           <section className="space-y-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Preferences (optional)
-            </p>
-            <div className="space-y-2">
-              <Label htmlFor="client-add-notes">Notes</Label>
-              <Input
-                id="client-add-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="h-11 rounded-xl"
-                placeholder="e.g. prefers short sides"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="client-add-tags">Tags</Label>
-              <Input
-                id="client-add-tags"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                className="h-11 rounded-xl"
-                placeholder="e.g. VIP, regular (comma-separated)"
-              />
-            </div>
+            <button
+              type="button"
+              className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+              onClick={() => setMoreDetails((v) => !v)}
+            >
+              {moreDetails ? "Hide more details" : "More details"}
+            </button>
+            {moreDetails ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="client-add-notes">Notes</Label>
+                  <Input
+                    id="client-add-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="h-11 rounded-xl"
+                    placeholder="e.g. prefers short sides"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="client-add-tags">Tags</Label>
+                  <Input
+                    id="client-add-tags"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    className="h-11 rounded-xl"
+                    placeholder="e.g. VIP, regular (comma-separated)"
+                  />
+                </div>
+              </>
+            ) : null}
           </section>
         </div>
         <div className="flex shrink-0 gap-2 border-t border-border/50 p-4">

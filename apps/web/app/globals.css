@@ -5,6 +5,18 @@
 /* Design system: slate neutrals, sky primary, violet accent — no gold/yellow */
 
 @layer utilities {
+  .interactive {
+    @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0;
+  }
+  .surface-0 {
+    background-color: color-mix(in srgb, var(--background) 96%, white 4%);
+  }
+  .surface-1 {
+    background-color: color-mix(in srgb, var(--card) 88%, var(--background) 12%);
+  }
+  .surface-2 {
+    background-color: color-mix(in srgb, var(--card) 78%, var(--muted) 22%);
+  }
   .text-balance {
     text-wrap: balance;
   }

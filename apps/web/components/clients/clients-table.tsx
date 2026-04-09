@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { SmartAvatar } from "@/components/shared/smart-avatar";
 
 export type ClientRow = {
   id: string;
@@ -16,16 +17,18 @@ export type ClientRow = {
   lifetime_value: number | null;
   tags: string[] | null;
   created_at: string;
+  last_visit?: string | null;
+  total_spent?: number | null;
 };
 
-type SortKey = "name" | "email" | "lastVisit" | "ltv";
+type SortKey = "name" | "email" | "lastVisit" | "totalSpent";
 type SortDir = "asc" | "desc";
 
 const headers: { key: SortKey; label: string; className?: string }[] = [
   { key: "name", label: "Name" },
   { key: "email", label: "Contact" },
-  { key: "lastVisit", label: "Added" },
-  { key: "ltv", label: "LTV", className: "text-right" },
+  { key: "lastVisit", label: "Last visit" },
+  { key: "totalSpent", label: "Total spent", className: "text-right" },
 ];
 
 export function ClientsTable({ clients }: { clients: ClientRow[] }) {
@@ -56,10 +59,10 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
         const ae = a.email ?? "";
         const be = b.email ?? "";
         cmp = ae.localeCompare(be);
-      } else if (sortKey === "ltv") {
-        cmp = Number(a.lifetime_value ?? 0) - Number(b.lifetime_value ?? 0);
+      } else if (sortKey === "totalSpent") {
+        cmp = Number(a.total_spent ?? a.lifetime_value ?? 0) - Number(b.total_spent ?? b.lifetime_value ?? 0);
       } else if (sortKey === "lastVisit") {
-        cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        cmp = new Date(a.last_visit ?? a.created_at).getTime() - new Date(b.last_visit ?? b.created_at).getTime();
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -124,18 +127,21 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                 className="border-b border-border/40 transition-colors last:border-0 hover:bg-muted/40"
               >
                 <td className="p-3 font-medium">
-                  <Link href={`/dashboard/clients/${c.id}`} className="text-primary hover:underline">
-                    {c.name}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <SmartAvatar name={c.name} className="size-9" />
+                    <Link href={`/dashboard/clients/${c.id}`} className="text-primary hover:underline">
+                      {c.name}
+                    </Link>
+                  </div>
                 </td>
                 <td className="p-3 text-muted-foreground">
                   {[c.email, c.phone].filter(Boolean).join(" · ") || "—"}
                 </td>
                 <td className="p-3 tabular-nums text-muted-foreground">
-                  {formatRelativeDate(c.created_at)}
+                  {formatRelativeDate(c.last_visit ?? c.created_at)}
                 </td>
                 <td className="p-3 text-right tabular-nums font-medium">
-                  ${Number(c.lifetime_value ?? 0).toFixed(0)}
+                  ${Number(c.total_spent ?? c.lifetime_value ?? 0).toFixed(0)}
                 </td>
                 <td className="p-3">
                   <div className="flex flex-wrap gap-1">
@@ -144,6 +150,10 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                         {t}
                       </Badge>
                     ))}
+                    <Link href="/dashboard/calendar" className="text-[10px] text-primary hover:underline">
+                      <Plus className="mr-1 inline size-3" />
+                      Book
+                    </Link>
                   </div>
                 </td>
               </tr>

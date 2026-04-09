@@ -11,8 +11,9 @@ import {
   startOfWeek,
 } from "date-fns";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { generateSlotsForDay, type WorkingHourRow, type BusyRange } from "@/lib/slots";
+import { generateSlotStatesForDay, type WorkingHourRow, type BusyRange, type SlotState } from "@/lib/slots";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +30,7 @@ import { toast } from "sonner";
 import { MockPaymentSuccess } from "@/components/booking/mock-payment-success";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/shared/empty-state";
 
 function normalizeBusyJson(raw: unknown): { start: string; end: string }[] {
   if (!raw) return [];
@@ -69,7 +71,7 @@ type Props = {
   initialShop: ShopPayload | null;
 };
 
-const STEP_LABELS = ["Service", "Barber", "Time", "Details", "Confirm"];
+const STEP_LABELS = ["Service", "Barber", "Time", "Details", "Payment", "Confirm"];
 
 export function PublicBookingFlow({ slug, initialShop }: Props) {
   const supabase = useMemo(() => createClient(), []);
@@ -82,12 +84,13 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     startOfWeek(new Date(), { weekStartsOn: 1 })
   );
   const [slot, setSlot] = useState<Date | null>(null);
-  const [slots, setSlots] = useState<Date[]>([]);
+  const [slotStates, setSlotStates] = useState<SlotState[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [phase, setPhase] = useState<"wizard" | "pay">("wizard");
+  const [phase, setPhase] = useState<"wizard" | "pay" | "done">("wizard");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "online">("cash");
 
   useEffect(() => {
     if (!shop?.services?.length) return;
@@ -132,14 +135,14 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
         end: new Date(b.end),
       }));
 
-      const generated = generateSlotsForDay(
+      const generated = generateSlotStatesForDay(
         dayDate,
         selectedBarber.working_hours,
         selectedService.duration_min,
         busy,
         15
       );
-      setSlots(generated);
+      setSlotStates(generated);
       setLoadingSlots(false);
     })();
   }, [supabase, selectedService, selectedBarber, day]);
@@ -149,12 +152,12 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
   }, [weekAnchor]);
 
   const morningSlots = useMemo(
-    () => slots.filter((s) => s.getHours() < 12),
-    [slots]
+    () => slotStates.filter((s) => s.start.getHours() < 12),
+    [slotStates]
   );
   const afternoonSlots = useMemo(
-    () => slots.filter((s) => s.getHours() >= 12),
-    [slots]
+    () => slotStates.filter((s) => s.start.getHours() >= 12),
+    [slotStates]
   );
 
   function emailValid(e: string) {
@@ -204,7 +207,8 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
       return;
     }
 
-    setPhase("pay");
+    if (paymentMethod === "online") setPhase("pay");
+    else setPhase("done");
   }
 
   function canContinue(): boolean {
@@ -212,7 +216,8 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
     if (step === 1) return Boolean(barberId && shop?.barbers.some((b) => b.barber.id === barberId));
     if (step === 2) return slot !== null;
     if (step === 3) return detailsValid;
-    if (step === 4)
+    if (step === 4) return paymentMethod === "cash" || paymentMethod === "online";
+    if (step === 5)
       return Boolean(
         selectedService &&
           selectedBarber &&
@@ -227,7 +232,7 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
       if (step === 3) toast.error("Check your details");
       return;
     }
-    if (step < 4) setStep((s) => s + 1);
+    if (step < 5) setStep((s) => s + 1);
     else void confirmBooking();
   }
 
@@ -243,6 +248,20 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
           <Skeleton className="h-4 w-full" />
         </CardHeader>
       </Card>
+    );
+  }
+  if (!shop.services?.length) {
+    return (
+      <EmptyState
+        icon={ChevronRight}
+        title="Booking unavailable"
+        description="This shop has no services configured yet. Ask the shop owner to create the first service."
+        cta={
+          <Link href="/" className="text-sm text-primary hover:underline">
+            Back to homepage
+          </Link>
+        }
+      />
     );
   }
 
@@ -322,12 +341,13 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                   {step === 1 && "Choose your barber"}
                   {step === 2 && "Pick a time"}
                   {step === 3 && "Your details"}
-                  {step === 4 && "Review & confirm"}
+                  {step === 4 && "Payment method"}
+                  {step === 5 && "Review & confirm"}
                 </CardTitle>
                 <CardDescription>
                   {step === 2 && selectedService
                     ? `${format(new Date(day + "T12:00:00"), "EEE, MMM d")} · ${selectedService.duration_min} min · Times in ${tz}`
-                    : step === 4
+                    : step === 5
                       ? "Confirm your appointment before demo payment."
                       : " "}
                 </CardDescription>
@@ -478,14 +498,18 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                             <div className="flex flex-wrap gap-2">
                               {morningSlots.map((s) => (
                                 <Button
-                                  key={s.toISOString()}
+                                  key={s.start.toISOString()}
                                   type="button"
-                                  variant={slot && isSameDay(slot, s) && slot.getTime() === s.getTime() ? "default" : "outline"}
+                                  variant={slot && isSameDay(slot, s.start) && slot.getTime() === s.start.getTime() ? "default" : "outline"}
                                   size="sm"
-                                  className="h-10 min-w-[4.5rem] rounded-lg font-mono text-xs"
-                                  onClick={() => setSlot(s)}
+                                  disabled={!s.available}
+                                  className={cn(
+                                    "h-10 min-w-[4.5rem] rounded-lg font-mono text-xs",
+                                    !s.available && "border-destructive/50 text-destructive line-through opacity-70"
+                                  )}
+                                  onClick={() => setSlot(s.start)}
                                 >
-                                  {format(s, "HH:mm")}
+                                  {format(s.start, "HH:mm")}
                                 </Button>
                               ))}
                             </div>
@@ -499,14 +523,18 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                             <div className="flex flex-wrap gap-2">
                               {afternoonSlots.map((s) => (
                                 <Button
-                                  key={s.toISOString()}
+                                  key={s.start.toISOString()}
                                   type="button"
-                                  variant={slot && isSameDay(slot, s) && slot.getTime() === s.getTime() ? "default" : "outline"}
+                                  variant={slot && isSameDay(slot, s.start) && slot.getTime() === s.start.getTime() ? "default" : "outline"}
                                   size="sm"
-                                  className="h-10 min-w-[4.5rem] rounded-lg font-mono text-xs"
-                                  onClick={() => setSlot(s)}
+                                  disabled={!s.available}
+                                  className={cn(
+                                    "h-10 min-w-[4.5rem] rounded-lg font-mono text-xs",
+                                    !s.available && "border-destructive/50 text-destructive line-through opacity-70"
+                                  )}
+                                  onClick={() => setSlot(s.start)}
                                 >
-                                  {format(s, "HH:mm")}
+                                  {format(s.start, "HH:mm")}
                                 </Button>
                               ))}
                             </div>
@@ -566,7 +594,38 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                   </div>
                 )}
 
-                {step === 4 && selectedService && selectedBarber && slot && (
+                {step === 4 && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("cash")}
+                      className={cn(
+                        "rounded-xl border p-4 text-left transition",
+                        paymentMethod === "cash"
+                          ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                          : "border-border/70 hover:bg-muted/40"
+                      )}
+                    >
+                      <p className="font-medium">Pay at shop</p>
+                      <p className="text-xs text-muted-foreground">Reserve now, pay cash/card in person.</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("online")}
+                      className={cn(
+                        "rounded-xl border p-4 text-left transition",
+                        paymentMethod === "online"
+                          ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                          : "border-border/70 hover:bg-muted/40"
+                      )}
+                    >
+                      <p className="font-medium">Pay online</p>
+                      <p className="text-xs text-muted-foreground">Mock checkout for this build.</p>
+                    </button>
+                  </div>
+                )}
+
+                {step === 5 && selectedService && selectedBarber && slot && (
                   <div className="space-y-4 rounded-xl border border-border/60 bg-muted/30 p-4">
                     <div className="flex justify-between gap-4 text-sm">
                       <span className="text-muted-foreground">Service</span>
@@ -592,6 +651,10 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
                       <span className="text-right font-semibold">
                         ${(selectedService.price_cents / 100).toFixed(2)}
                       </span>
+                    </div>
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">Payment</span>
+                      <span className="text-right font-medium">{paymentMethod === "cash" ? "Pay at shop" : "Pay online"}</span>
                     </div>
                   </div>
                 )}
@@ -622,6 +685,31 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
             </div>
           </Card>
         )}
+        {phase === "done" && (
+          <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
+            <div className="glass-strong rounded-[15px]">
+              <CardHeader>
+                <CardTitle className="font-heading text-lg">Booking confirmed</CardTitle>
+                <CardDescription>Your appointment is reserved. Payment due at shop.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setPhase("wizard");
+                    setStep(0);
+                    setSlot(null);
+                    setName("");
+                    setEmail("");
+                    setPhone("");
+                  }}
+                >
+                  Book another
+                </Button>
+              </CardContent>
+            </div>
+          </Card>
+        )}
       </motion.div>
 
       {phase === "wizard" && (
@@ -642,7 +730,7 @@ export function PublicBookingFlow({ slug, initialShop }: Props) {
               onClick={() => void goNext()}
               disabled={!canContinue()}
             >
-              {step === 4 ? "Confirm booking" : "Continue"}
+              {step === 5 ? "Confirm booking" : "Next"}
             </Button>
           </div>
         </div>

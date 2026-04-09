@@ -34,3 +34,30 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Android APK (Capacitor)
+
+The app is wrapped with **Capacitor** so the **production** site opens in a native WebView (required for Next.js SSR, auth, and Supabase).
+
+1. **Deploy** the web app to Vercel (or your HTTPS host) first.
+2. From the repo root, **point the shell at that URL** and sync:
+
+   ```bash
+   export CAPACITOR_SERVER_URL=https://your-deployment.vercel.app
+   pnpm android:sync
+   ```
+
+3. **Install** [Android Studio](https://developer.android.com/studio) (includes Android SDK). Open **SDK Manager** and install a recent SDK + build tools.
+4. **Build a debug APK** (command line):
+
+   ```bash
+   cd apps/web/android && ./gradlew assembleDebug
+   ```
+
+   Debug APK path: `apps/web/android/app/build/outputs/apk/debug/app-debug.apk`
+
+   Or open the project in Android Studio: `pnpm android:open` → **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+
+5. **Release** builds need signing in Android Studio (**Build → Generate Signed Bundle / APK**).
+
+**Emulator:** To load a machine on your LAN, use `http://10.0.2.2:3000` as `CAPACITOR_SERVER_URL` (Android emulator maps that to the host’s localhost). Use `pnpm` / `cap sync` after changing the URL.

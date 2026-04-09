@@ -4,12 +4,15 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Plus,
   CalendarDays,
   ExternalLink,
   LayoutDashboard,
   Menu,
   Megaphone,
+  Scissors,
   Settings,
+  Store,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -61,9 +64,11 @@ export function DashboardBottomNav({ role, tenantSlug }: Props) {
   }
 
   const moreLinks: { href: string; label: string; icon: typeof Megaphone }[] = [
+    { href: "/dashboard/services", label: "Services", icon: Scissors },
     { href: "/dashboard/marketing", label: "Marketing", icon: Megaphone },
   ];
   if (r === "owner") {
+    moreLinks.push({ href: "/dashboard/shops", label: "Shops", icon: Store });
     moreLinks.push({ href: "/dashboard/settings", label: "Settings", icon: Settings });
   }
 
@@ -73,7 +78,7 @@ export function DashboardBottomNav({ role, tenantSlug }: Props) {
         className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-card/90 pb-[env(safe-area-inset-bottom)] shadow-md backdrop-blur-md md:hidden"
         aria-label="Primary"
       >
-        <div className="mx-auto flex h-16 max-w-[var(--app-content-max-width)] items-stretch justify-around px-1">
+        <div className="mx-auto flex h-16 max-w-[var(--app-content-max-width)] items-stretch justify-around gap-1 px-1">
           {primary.map((item) => {
             const active =
               item.href.startsWith("/book/") ? false : isActive(pathname, item.href);
@@ -148,6 +153,15 @@ export function DashboardBottomNav({ role, tenantSlug }: Props) {
               </div>
             </SheetContent>
           </Sheet>
+        </div>
+        <div className="pointer-events-none absolute inset-x-0 -top-6 flex justify-center">
+          <Link
+            href="/dashboard/calendar"
+            className="pointer-events-auto inline-flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition hover:bg-primary/90"
+            aria-label="Create booking"
+          >
+            <Plus className="size-5" />
+          </Link>
         </div>
       </nav>
     </>

@@ -1,28 +1,60 @@
 import Link from "next/link";
-import { CalendarDays, Users } from "lucide-react";
+import { CalendarDays, Scissors, Sparkles, UserPlus, Users } from "lucide-react";
 import { getSessionProfile } from "@/lib/auth/profile";
 import { createClient } from "@/lib/supabase/server";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/shared/page-shell";
+import { AppCard } from "@/components/shared/app-card";
+import { StatCard } from "@/components/shared/stat-card";
+import { SectionHeader } from "@/components/shared/section-header";
+import { SmartAvatar } from "@/components/shared/smart-avatar";
+import { ShopMarketplace } from "@/components/marketplace/shop-marketplace";
 
 export default async function DashboardHomePage() {
-  const { tenant, profile } = await getSessionProfile();
+  const { tenant, profile, effectiveRole } = await getSessionProfile();
   const supabase = await createClient();
+  const role = effectiveRole ?? profile?.role;
+
+  if (role === "client") {
+    const { data: tenantRows } = await supabase
+      .from("tenants")
+      .select("id, name, slug, city, region, country, logo_url, icon_emoji, latitude, longitude")
+      .order("created_at", { ascending: false })
+      .eq("is_active", true)
+      .limit(100);
+    const tenants = (tenantRows?.length ? tenantRows : tenant ? [tenant] : []) as Array<{
+      id: string;
+      name: string;
+      slug: string;
+      city: string | null;
+      region: string | null;
+      country: string | null;
+      logo_url: string | null;
+      icon_emoji: string | null;
+      latitude: number | null;
+      longitude: number | null;
+    }>;
+
+    return (
+      <PageShell eyebrow="Marketplace" title="Choose a shop" description="Discover barbershops, compare options, and book your preferred staff.">
+        <ShopMarketplace shops={tenants} />
+      </PageShell>
+    );
+  }
 
   const tenantId = tenant?.id;
   let apptCount = 0;
   let clientCount = 0;
+  let revenueToday = 0;
+  let nextAppointment: { start_time: string; clients: { name: string } | null } | null = null;
 
   if (tenantId) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(23, 59, 59, 999);
     const { count: a } = await supabase
       .from("appointments")
       .select("*", { count: "exact", head: true })
@@ -32,107 +64,153 @@ export default async function DashboardHomePage() {
       .from("clients")
       .select("*", { count: "exact", head: true })
       .eq("tenant_id", tenantId);
+    const { data: todayRows } = await supabase
+      .from("appointments")
+      .select("start_time, services(price_cents)")
+      .eq("tenant_id", tenantId)
+      .gte("start_time", start.toISOString())
+      .lte("start_time", end.toISOString());
+    const { data: nextRow } = await supabase
+      .from("appointments")
+      .select("start_time, clients(name)")
+      .eq("tenant_id", tenantId)
+      .gte("start_time", new Date().toISOString())
+      .order("start_time", { ascending: true })
+      .limit(1)
+      .maybeSingle();
     apptCount = a ?? 0;
     clientCount = c ?? 0;
+    revenueToday = (todayRows ?? []).reduce((sum, row) => {
+      const svc = row.services as { price_cents?: number } | null;
+      return sum + Number(svc?.price_cents ?? 0);
+    }, 0);
+    nextAppointment = nextRow as { start_time: string; clients: { name: string } | null } | null;
   }
 
+  const hasData = apptCount > 0 || clientCount > 0;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-10">
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-          Overview
-        </p>
-        <h1 className="font-heading text-3xl font-semibold tracking-tight md:text-4xl">
-          <span className="text-gradient">{tenant?.name ?? "Your shop"}</span>
-        </h1>
-        <p className="max-w-xl text-muted-foreground">
-          {profile?.role === "client"
-            ? "Your shop workspace — book visits on the public page."
-            : "Realtime calendar, CRM, and public booking — all scoped to your workspace."}
-        </p>
-      </div>
-
-      {profile?.role === "client" && tenant?.slug ? (
-        <div className="rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 to-accent/5 p-4 md:p-5">
-          <p className="text-sm font-medium text-foreground">Book as a guest</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Client accounts use the public booking flow — no staff tools here.
-          </p>
-          <Link
-            href={`/book/${tenant.slug}`}
-            className={cn(
-              buttonVariants(),
-              "mt-4 inline-flex rounded-xl shadow-lg shadow-primary/15"
-            )}
-          >
-            Open booking page
+    <PageShell
+      eyebrow="Overview"
+      title={tenant?.name ?? "Your shop"}
+      description="Today overview, upcoming booking, and quick actions."
+      actions={
+        <>
+          <Link href="/dashboard/calendar" className={cn(buttonVariants(), "rounded-xl")}>
+            Open calendar
           </Link>
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
-          <div className="glass-strong rounded-[15px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                  <CalendarDays className="size-5" />
-                </span>
-                Today&apos;s appointments
-              </CardTitle>
-              <CardDescription>Scheduled from midnight local time</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="font-heading text-4xl font-semibold tabular-nums tracking-tight">
-                {apptCount}
-              </p>
-            </CardContent>
-          </div>
-        </Card>
-        <Card className="shine-border overflow-hidden rounded-2xl border-0 bg-transparent p-[1px] shadow-none">
-          <div className="glass-strong rounded-[15px]">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-accent/12 text-accent">
-                  <Users className="size-5" />
-                </span>
-                Clients
-              </CardTitle>
-              <CardDescription>Profiles in your CRM</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="font-heading text-4xl font-semibold tabular-nums tracking-tight">
-                {clientCount}
-              </p>
-            </CardContent>
-          </div>
-        </Card>
+          <Link href="/dashboard/clients" className={cn(buttonVariants({ variant: "outline" }), "rounded-xl")}>
+            Add client
+          </Link>
+        </>
+      }
+    >
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard title="Appointments today" value={apptCount} icon={CalendarDays} hint="Live from your calendar" />
+        <StatCard title="Revenue today" value={`$${(revenueToday / 100).toFixed(0)}`} icon={Sparkles} hint="Based on booked services" />
+        <StatCard title="Clients" value={clientCount} icon={Users} hint="Profiles in CRM" />
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href="/dashboard/calendar"
-          className={cn(
-            buttonVariants(),
-            "rounded-xl shadow-lg shadow-primary/15"
-          )}
-        >
-          Open calendar
-        </Link>
-        {tenant?.slug ? (
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+        <AppCard tone="emphasis">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CalendarDays className="size-5 text-primary" />
+              Next appointment
+            </CardTitle>
+            <CardDescription>Never lose track of the next guest.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {nextAppointment ? (
+              <div className="flex items-center gap-3">
+                <SmartAvatar name={nextAppointment.clients?.name ?? "Guest"} />
+                <div>
+                  <p className="font-medium">{nextAppointment.clients?.name ?? "Guest"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {new Date(nextAppointment.start_time).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No upcoming bookings yet. Use quick actions to add one in seconds.
+              </p>
+            )}
+          </CardContent>
+        </AppCard>
+
+        <AppCard>
+          <CardHeader>
+            <CardTitle>Quick actions</CardTitle>
+            <CardDescription>Fastest path to your daily tasks.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <Link href="/dashboard/clients" className={cn(buttonVariants({ variant: "outline" }), "justify-start rounded-xl")}>
+              <UserPlus className="mr-2 size-4" /> Add client
+            </Link>
+            <Link href="/dashboard/calendar" className={cn(buttonVariants({ variant: "outline" }), "justify-start rounded-xl")}>
+              <CalendarDays className="mr-2 size-4" /> New booking
+            </Link>
+            <Link href="/dashboard/services" className={cn(buttonVariants({ variant: "outline" }), "justify-start rounded-xl")}>
+              <Scissors className="mr-2 size-4" /> Add service
+            </Link>
+            <Link href="/dashboard/shops/new" className={cn(buttonVariants({ variant: "outline" }), "justify-start rounded-xl")}>
+              <Sparkles className="mr-2 size-4" /> Create new shop
+            </Link>
+          </CardContent>
+        </AppCard>
+      </div>
+
+      <SectionHeader
+        title="Recent activity"
+        description="Bookings, client updates, and service changes."
+      />
+      <AppCard>
+        <CardContent className="space-y-2 pt-4">
+          {(hasData
+            ? [
+                "Appointment count refreshed from calendar.",
+                "Client records synced for the workspace.",
+                "Dashboard metrics updated in real time.",
+              ]
+            : [
+                "No activity yet - create your first booking.",
+                "Add clients to start tracking visits and spend.",
+                "Create services so bookings can be scheduled.",
+              ]
+          ).map((item) => (
+            <div key={item} className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm">
+              {item}
+            </div>
+          ))}
+        </CardContent>
+      </AppCard>
+
+      {role === "client" && tenant?.slug ? (
+        <AppCard>
+          <CardHeader>
+            <CardTitle>Client view</CardTitle>
+            <CardDescription>Use the public booking page for new appointments.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href={`/book/${tenant.slug}`} className={cn(buttonVariants(), "rounded-xl")}>
+              Open booking page
+            </Link>
+          </CardContent>
+        </AppCard>
+      ) : null}
+      {tenant?.slug ? (
+        <div className="pt-2">
           <Link
             href={`/book/${tenant.slug}`}
             target="_blank"
             rel="noreferrer"
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              "rounded-xl border-border/70"
-            )}
+            className={cn(buttonVariants({ variant: "ghost" }), "rounded-xl")}
           >
             Preview booking page
           </Link>
-        ) : null}
-      </div>
-    </div>
+        </div>
+      ) : null}
+    </PageShell>
   );
 }

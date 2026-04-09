@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 
 type AppointmentRow = {
   id: string;
+  barber_id?: string;
+  client_id?: string;
   start_time: string;
   end_time: string;
   status: string;
@@ -83,6 +85,8 @@ export function CalendarBoard({
   const [barberId, setBarberId] = useState<string | undefined>(undefined);
   const [serviceId, setServiceId] = useState<string | undefined>(undefined);
   const [clientId, setClientId] = useState<string | undefined>(undefined);
+  const [barberFilter, setBarberFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
   const [startLocal, setStartLocal] = useState("");
   const [pickersReady, setPickersReady] = useState(false);
   const [wizardStep, setWizardStep] = useState(0);
@@ -105,6 +109,8 @@ export function CalendarBoard({
       .select(
         `
         id,
+        barber_id,
+        client_id,
         start_time,
         end_time,
         status,
@@ -239,13 +245,30 @@ export function CalendarBoard({
     days.forEach((d) => {
       map.set(format(d, "yyyy-MM-dd"), []);
     });
-    rows.forEach((r) => {
+    rows
+      .filter((r) => (barberFilter === "all" ? true : r.barber_id === barberFilter))
+      .filter((r) => (clientFilter === "all" ? true : r.client_id === clientFilter))
+      .forEach((r) => {
       const key = format(new Date(r.start_time), "yyyy-MM-dd");
       if (!map.has(key)) return;
       map.get(key)!.push(r);
     });
     return map;
-  }, [rows, days]);
+  }, [rows, days, barberFilter, clientFilter]);
+
+  function barberColor(barberId?: string) {
+    if (!barberId) return "border-border/60";
+    const colors = [
+      "border-blue-400/60",
+      "border-violet-400/60",
+      "border-emerald-400/60",
+      "border-amber-400/60",
+      "border-rose-400/60",
+    ];
+    let hash = 0;
+    for (let i = 0; i < barberId.length; i += 1) hash = (hash << 5) - hash + barberId.charCodeAt(i);
+    return colors[Math.abs(hash) % colors.length];
+  }
 
   return (
     <div className="space-y-6">
@@ -272,6 +295,22 @@ export function CalendarBoard({
           <p className="text-sm font-medium tabular-nums text-muted-foreground">
             {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <EntitySelect
+            ready
+            value={barberFilter}
+            onValueChange={setBarberFilter}
+            options={[{ value: "all", label: "All staff" }, ...barbers.map((b) => ({ value: b.id, label: b.display_name }))]}
+            placeholder="Filter staff"
+          />
+          <EntitySelect
+            ready
+            value={clientFilter}
+            onValueChange={setClientFilter}
+            options={[{ value: "all", label: "All clients" }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
+            placeholder="Filter client"
+          />
         </div>
         {canCreateAppointment ? (
           <Button
@@ -340,7 +379,7 @@ export function CalendarBoard({
                     {list.map((a) => (
                       <div
                         key={a.id}
-                        className="rounded-lg border border-border/60 bg-background/60 p-2 text-xs"
+                        className={cn("rounded-lg border bg-background/60 p-2 text-xs", barberColor(a.barber_id))}
                       >
                         <p className="font-medium">
                           {format(new Date(a.start_time), "HH:mm")}

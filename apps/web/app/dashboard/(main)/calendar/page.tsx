@@ -2,12 +2,13 @@ import { getSessionProfile } from "@/lib/auth/profile";
 import { CalendarBoard } from "@/components/calendar/calendar-board";
 
 export default async function CalendarPage() {
-  const { tenant, profile } = await getSessionProfile();
+  const { tenant, profile, effectiveRole } = await getSessionProfile();
   if (!tenant?.id) {
     return null;
   }
 
-  const canCreateAppointment = profile?.role !== "client";
+  const role = effectiveRole ?? profile?.role;
+  const canCreateAppointment = role !== "client";
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">

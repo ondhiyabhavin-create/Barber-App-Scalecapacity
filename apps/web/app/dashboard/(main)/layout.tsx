@@ -9,14 +9,16 @@ import { cn } from "@/lib/utils";
 import { DashboardSidebarNav } from "@/components/dashboard/dashboard-nav";
 import { DashboardBottomNav } from "@/components/dashboard/dashboard-bottom-nav";
 import { Badge } from "@/components/ui/badge";
+import { createClient } from "@/lib/supabase/server";
+import { PersonaSwitcher } from "@/components/dashboard/persona-switcher";
 
 export default async function MainDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { profile, tenant } = await getSessionProfile();
-  const role = profile?.role;
+  const { profile, tenant, effectiveRole, impersonation } = await getSessionProfile();
+  const role = effectiveRole ?? profile?.role;
 
   if (!profile?.tenant_id) {
     redirect("/dashboard/onboarding");
@@ -24,6 +26,21 @@ export default async function MainDashboardLayout({
 
   if (!tenant?.onboarding_completed) {
     redirect("/dashboard/onboarding");
+  }
+
+  let usersForSwitch: { id: string; role: "owner" | "staff" | "client"; label: string }[] = [];
+  if (profile?.role === "owner" && tenant?.id) {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("users")
+      .select("id, role, name, email")
+      .eq("tenant_id", tenant.id)
+      .order("created_at", { ascending: true });
+    usersForSwitch = (data ?? []).map((u) => ({
+      id: u.id,
+      role: u.role as "owner" | "staff" | "client",
+      label: u.name ?? u.email ?? u.role,
+    }));
   }
 
   const devRoleSwitcherOn =
@@ -41,7 +58,11 @@ export default async function MainDashboardLayout({
             className="group flex items-center gap-2 font-heading text-lg font-semibold tracking-tight"
           >
             <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-accent/15 text-primary ring-1 ring-primary/20">
-              <Sparkles className="size-4" />
+              {tenant?.icon_emoji ? (
+                <span className="text-sm">{tenant.icon_emoji}</span>
+              ) : (
+                <Sparkles className="size-4" />
+              )}
             </span>
             BarberOS
           </Link>
@@ -51,7 +72,7 @@ export default async function MainDashboardLayout({
           {role ? (
             <div className="mt-2 pl-[2.75rem]">
               <Badge variant="secondary" className="text-[10px] font-medium uppercase tracking-wide">
-                {role}
+                {profile?.icon_emoji ? `${profile.icon_emoji} ` : ""}{role}
               </Badge>
             </div>
           ) : null}
@@ -71,6 +92,17 @@ export default async function MainDashboardLayout({
               Open booking page
             </Link>
           ) : null}
+          {profile?.role === "owner" ? (
+            <Link
+              href="/dashboard/shops/new"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "inline-flex w-full justify-center rounded-xl border-border/70"
+              )}
+            >
+              Create new shop
+            </Link>
+          ) : null}
           <LogoutButton />
         </div>
       </aside>
@@ -87,6 +119,12 @@ export default async function MainDashboardLayout({
               BarberOS
             </Link>
             <div className="ml-auto flex items-center gap-2">
+              {profile?.role === "owner" ? (
+                <PersonaSwitcher
+                  users={usersForSwitch}
+                  current={impersonation ? `${impersonation.role}:${impersonation.userId ?? ""}` : null}
+                />
+              ) : null}
               <ModeToggle />
             </div>
           </div>

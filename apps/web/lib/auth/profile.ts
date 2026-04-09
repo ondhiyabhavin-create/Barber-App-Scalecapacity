@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
 
 export type ProfileRow = {
   id: string;
@@ -8,6 +9,7 @@ export type ProfileRow = {
   email: string | null;
   phone: string | null;
   avatar_url: string | null;
+  icon_emoji: string | null;
 };
 
 export type TenantRow = {
@@ -21,9 +23,20 @@ export type TenantRow = {
   postal_code: string | null;
   country: string | null;
   logo_url: string | null;
+  icon_emoji: string | null;
   plan: string;
   onboarding_completed: boolean;
   timezone: string;
+  latitude: number | null;
+  longitude: number | null;
+  is_active: boolean;
+  archived_at: string | null;
+  owner_user_id: string | null;
+};
+
+export type ImpersonationState = {
+  role: "owner" | "staff" | "client";
+  userId: string | null;
 };
 
 export async function getSessionProfile() {
@@ -54,5 +67,19 @@ export async function getSessionProfile() {
     tenant = t as TenantRow | null;
   }
 
-  return { user, profile: p, tenant };
+  let impersonation: ImpersonationState | null = null;
+  let effectiveRole = p?.role ?? null;
+  if (p?.role === "owner") {
+    const cookieStore = await cookies();
+    const raw = cookieStore.get("barberos_impersonation")?.value;
+    if (raw) {
+      const [role, userId] = raw.split(":");
+      if (role === "owner" || role === "staff" || role === "client") {
+        impersonation = { role, userId: userId || null };
+        effectiveRole = role;
+      }
+    }
+  }
+
+  return { user, profile: p, tenant, effectiveRole, impersonation };
 }
